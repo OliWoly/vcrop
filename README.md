@@ -12,7 +12,8 @@ and Linux.
 vcrop video.mp4
 ```
 
-- Drag a rectangle over the video to choose the crop region (any direction).
+- Drag a rectangle over the video to choose the crop region (any
+  direction); **Reset** removes it.
 - The panel shows the hovered pixel and the selection as `x / y / w / h` in
   video pixels. Dimensions are rounded to even values, as most encoders
   require.
@@ -24,8 +25,8 @@ vcrop video.mp4
   closes the app. The output appears next to the input with a matching
   suffix (`video_cropped.mp4`, `video_trimmed.mp4`,
   `video_cropped_trimmed.mp4`).
-- **Copy command** puts the equivalent shell command on the clipboard (and
-  echoes it to the terminal) and closes the app.
+- **Copy command** puts the equivalent shell command on the clipboard,
+  prints it verbatim to stdout as a fallback, and closes the app.
 - Space toggles play/pause, Esc quits, the slider seeks. Playback is
   video-only; audio is passed through untouched (`-c:a copy`) when
   processing.

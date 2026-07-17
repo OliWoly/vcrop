@@ -317,6 +317,11 @@ void App::drawUi()
     if (selectionValid()) {
         const CropRect r = selectionRect();
         ImGui::Text("Crop:   x=%d  y=%d  w=%d  h=%d", r.x, r.y, r.w, r.h);
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Reset")) {
+            hasSelection_ = false;
+            dragging_ = false;
+        }
     } else {
         ImGui::TextDisabled("Crop:   drag a rectangle on the video");
     }
@@ -458,8 +463,10 @@ void App::doCopyCommand()
     const auto argv = buildFfmpegArgv(job, buildOutputPath(job));
     const std::string cmd = buildShellCommand(argv);
     SDL_SetClipboardText(cmd.c_str());
-    // Also echo it: on X11/Wayland the clipboard may not outlive the process
-    // unless a clipboard manager is running.
-    std::printf("vcrop: command copied to clipboard:\n  %s\n", cmd.c_str());
+    // Also print the literal command to stdout as a fallback: on X11/Wayland
+    // the clipboard may not outlive the process unless a clipboard manager is
+    // running. The notice goes to stderr so stdout stays pipeable.
+    std::fprintf(stderr, "vcrop: command copied to clipboard:\n");
+    std::printf("%s\n", cmd.c_str());
     quitRequested_ = true;
 }
