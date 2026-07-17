@@ -24,6 +24,15 @@ std::string formatTime(double t)
     return buf;
 }
 
+std::string formatTimePrecise(double t)
+{
+    t = std::max(0.0, t);
+    const int minutes = static_cast<int>(t) / 60;
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "%d:%04.1f", minutes, t - minutes * 60);
+    return buf;
+}
+
 } // namespace
 
 int App::run(const std::string& path)
@@ -158,6 +167,10 @@ void App::handleEvent(const SDL_Event& e)
             quitRequested_ = true;
         else if (e.key.keysym.sym == SDLK_SPACE)
             togglePlay();
+        else if (e.key.keysym.sym == SDLK_i)
+            trimStart_ = currentTimeClamped();
+        else if (e.key.keysym.sym == SDLK_o)
+            trimEnd_ = currentTimeClamped();
         break;
     case SDL_MOUSEBUTTONDOWN:
         if (e.button.button == SDL_BUTTON_LEFT && !io.WantCaptureMouse) {
@@ -312,7 +325,7 @@ void App::drawUi()
     if (ImGui::Button(clock_.playing() ? "Pause" : "Play"))
         togglePlay();
     ImGui::SameLine();
-    const double shown = std::clamp(clock_.now(), 0.0, std::max(duration_, 0.0));
+    const double shown = currentTimeClamped();
     ImGui::Text("%s / %s", formatTime(shown).c_str(), formatTime(duration_).c_str());
 
     if (duration_ > 0.0) {
@@ -332,8 +345,32 @@ void App::drawUi()
     }
 
     ImGui::Separator();
-    ImGui::BeginDisabled(!selectionValid());
-    if (ImGui::Button("Crop"))
+    if (ImGui::Button("Set start"))
+        trimStart_ = shown;
+    ImGui::SameLine();
+    if (ImGui::Button("Set end"))
+        trimEnd_ = shown;
+    ImGui::SameLine();
+    if (trimActive()) {
+        const std::string from =
+            trimStart_ >= 0.0 ? formatTimePrecise(trimStart_) : "start";
+        const std::string to = trimEnd_ >= 0.0 ? formatTimePrecise(trimEnd_) : "end";
+        ImGui::Text("%s - %s", from.c_str(), to.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Clear")) {
+            trimStart_ = -1.0;
+            trimEnd_ = -1.0;
+        }
+    } else {
+        ImGui::TextDisabled("no trim (i/o set start/end)");
+    }
+    if (!trimRangeOk())
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+                           "trim end must be after trim start");
+
+    ImGui::Separator();
+    ImGui::BeginDisabled(!actionReady());
+    if (ImGui::Button(actionLabel()))
         doCrop();
     ImGui::SameLine();
     if (ImGui::Button("Copy command"))
@@ -360,23 +397,65 @@ CropRect App::selectionRect() const
                              decoder_.width(), decoder_.height());
 }
 
+bool App::trimRangeOk() const
+{
+    if (trimStart_ >= 0.0 && trimEnd_ >= 0.0)
+        return trimEnd_ > trimStart_;
+    return true;
+}
+
+bool App::actionReady() const
+{
+    return (selectionValid() || trimActive()) && trimRangeOk();
+}
+
+const char* App::actionLabel() const
+{
+    const bool crop = selectionValid();
+    const bool trim = trimActive();
+    if (crop && trim)
+        return "Crop + Trim";
+    if (trim)
+        return "Trim";
+    return "Crop";
+}
+
+CropJob App::buildJob() const
+{
+    CropJob job;
+    job.inputPath = inputPath_;
+    job.hasCrop = selectionValid();
+    if (job.hasCrop)
+        job.crop = selectionRect();
+    job.trimStart = trimStart_;
+    job.trimEnd = trimEnd_;
+    return job;
+}
+
+double App::currentTimeClamped() const
+{
+    const double now = std::max(0.0, clock_.now());
+    return duration_ > 0.0 ? std::min(now, duration_) : now;
+}
+
 void App::doCrop()
 {
-    const std::string out = buildOutputPath(inputPath_);
-    const auto argv = buildFfmpegArgv(inputPath_, out, selectionRect());
+    const CropJob job = buildJob();
+    const std::string out = buildOutputPath(job);
+    const auto argv = buildFfmpegArgv(job, out);
     std::string err;
     if (!spawnDetached(argv, err)) {
         lastError_ = "failed to start ffmpeg: " + err;
         return;
     }
-    std::printf("vcrop: cropping in background -> %s\n", out.c_str());
+    std::printf("vcrop: processing in background -> %s\n", out.c_str());
     quitRequested_ = true;
 }
 
 void App::doCopyCommand()
 {
-    const auto argv =
-        buildFfmpegArgv(inputPath_, buildOutputPath(inputPath_), selectionRect());
+    const CropJob job = buildJob();
+    const auto argv = buildFfmpegArgv(job, buildOutputPath(job));
     const std::string cmd = buildShellCommand(argv);
     SDL_SetClipboardText(cmd.c_str());
     // Also echo it: on X11/Wayland the clipboard may not outlive the process

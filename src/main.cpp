@@ -10,12 +10,13 @@ void printUsage(std::FILE* out)
 {
     std::fputs("usage: vcrop <video-file>\n"
                "\n"
-               "Opens the video in a window; drag a rectangle to choose a crop\n"
-               "region, then click \"Crop\" to write <name>_cropped.<ext> next to\n"
+               "Opens the video in a window. Drag a rectangle to choose a crop\n"
+               "region and/or set trim start/end points, then click the action\n"
+               "button (Crop / Trim / Crop + Trim) to write the result next to\n"
                "the input, or \"Copy command\" to put the equivalent ffmpeg\n"
                "command on the clipboard. Either action closes the app.\n"
                "\n"
-               "keys: space = play/pause, esc = quit\n",
+               "keys: space = play/pause, i = trim start, o = trim end, esc = quit\n",
                out);
 }
 

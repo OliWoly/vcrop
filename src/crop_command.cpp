@@ -1,5 +1,7 @@
 #include "crop_command.h"
 
+#include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
@@ -7,29 +9,66 @@
 
 extern char** environ;
 
-std::string buildOutputPath(const std::string& inputPath)
+namespace {
+
+std::string formatSeconds(double t)
 {
-    const std::filesystem::path in(inputPath);
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.3f", t);
+    return buf;
+}
+
+} // namespace
+
+std::string buildOutputPath(const CropJob& job)
+{
+    std::string suffix;
+    if (job.hasCrop)
+        suffix += "_cropped";
+    if (job.hasTrim())
+        suffix += "_trimmed";
+    if (suffix.empty())
+        suffix = "_cropped";
+
+    const std::filesystem::path in(job.inputPath);
     const auto out =
-        in.parent_path() / (in.stem().string() + "_cropped" + in.extension().string());
+        in.parent_path() / (in.stem().string() + suffix + in.extension().string());
     return out.string();
 }
 
-std::vector<std::string> buildFfmpegArgv(const std::string& inputPath,
-                                         const std::string& outputPath,
-                                         const CropRect& r)
+std::vector<std::string> buildFfmpegArgv(const CropJob& job,
+                                         const std::string& outputPath)
 {
-    const std::string filter = "crop=" + std::to_string(r.w) + ":" +
-                               std::to_string(r.h) + ":" + std::to_string(r.x) +
-                               ":" + std::to_string(r.y);
+    std::vector<std::string> argv{"ffmpeg", "-hide_banner", "-nostdin", "-y"};
+
+    // -ss before -i seeks the demuxer; combined with re-encoding below this
+    // is frame-accurate. -t (a duration) avoids the shifted-timestamp
+    // semantics -to would have after input seeking.
+    if (job.trimStart >= 0.0) {
+        argv.push_back("-ss");
+        argv.push_back(formatSeconds(job.trimStart));
+    }
+    argv.push_back("-i");
+    argv.push_back(job.inputPath);
+    if (job.trimEnd >= 0.0) {
+        argv.push_back("-t");
+        argv.push_back(formatSeconds(job.trimEnd - std::max(job.trimStart, 0.0)));
+    }
+
+    if (job.hasCrop) {
+        const CropRect& r = job.crop;
+        argv.push_back("-vf");
+        argv.push_back("crop=" + std::to_string(r.w) + ":" + std::to_string(r.h) +
+                       ":" + std::to_string(r.x) + ":" + std::to_string(r.y));
+    }
+
     // -crf 18 is visually near-lossless; audio is passed through untouched.
-    // -y: re-running vcrop is expected to replace a previous _cropped output.
-    return {"ffmpeg", "-hide_banner", "-nostdin", "-y",
-            "-i",     inputPath,
-            "-vf",    filter,
-            "-c:v",   "libx264", "-crf", "18", "-preset", "veryfast",
-            "-c:a",   "copy",
-            outputPath};
+    // -y: re-running vcrop is expected to replace a previous output.
+    for (const char* arg :
+         {"-c:v", "libx264", "-crf", "18", "-preset", "veryfast", "-c:a", "copy"})
+        argv.push_back(arg);
+    argv.push_back(outputPath);
+    return argv;
 }
 
 std::string shellQuote(const std::string& s)

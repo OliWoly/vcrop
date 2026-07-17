@@ -1,9 +1,10 @@
 # vcrop
 
-A small native tool for visually cropping videos. Open a video, drag a
-rectangle over it, and either crop directly or copy a ready-to-paste
-`ffmpeg` command. Built with C++17, SDL2, Dear ImGui, and the FFmpeg
-libraries. Targets macOS and Linux.
+A small native tool for visually cropping and trimming videos. Open a
+video, drag a rectangle over it and/or mark trim start/end points, and
+either process directly or copy a ready-to-paste `ffmpeg` command. Built
+with C++17, SDL2, Dear ImGui, and the FFmpeg libraries. Targets macOS
+and Linux.
 
 ## Usage
 
@@ -15,12 +16,19 @@ vcrop video.mp4
 - The panel shows the hovered pixel and the selection as `x / y / w / h` in
   video pixels. Dimensions are rounded to even values, as most encoders
   require.
-- **Crop** starts `ffmpeg` detached in the background and closes the app;
-  the output appears next to the input as `video_cropped.mp4`.
+- **Set start** / **Set end** (or the `i` / `o` keys) mark a trim range at
+  the current playback position. Leave either unset to trim from the
+  beginning or to the end; **Clear** removes the range.
+- The action button reflects what will happen — **Crop**, **Trim**, or
+  **Crop + Trim** — and starts `ffmpeg` detached in the background, then
+  closes the app. The output appears next to the input with a matching
+  suffix (`video_cropped.mp4`, `video_trimmed.mp4`,
+  `video_cropped_trimmed.mp4`).
 - **Copy command** puts the equivalent shell command on the clipboard (and
   echoes it to the terminal) and closes the app.
 - Space toggles play/pause, Esc quits, the slider seeks. Playback is
-  video-only; audio is passed through untouched (`-c:a copy`) when cropping.
+  video-only; audio is passed through untouched (`-c:a copy`) when
+  processing.
 
 Requires the `ffmpeg` binary on `PATH` at crop time.
 

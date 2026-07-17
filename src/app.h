@@ -3,6 +3,7 @@
 #include <string>
 
 #include "coords.h"
+#include "crop_command.h"
 #include "playback_clock.h"
 #include "video_decoder.h"
 
@@ -32,6 +33,12 @@ private:
 
     bool selectionValid() const;
     CropRect selectionRect() const;
+    bool trimActive() const { return trimStart_ >= 0.0 || trimEnd_ >= 0.0; }
+    bool trimRangeOk() const;
+    bool actionReady() const;
+    const char* actionLabel() const;
+    CropJob buildJob() const;
+    double currentTimeClamped() const;
 
     std::string inputPath_;
     VideoDecoder decoder_;
@@ -45,6 +52,9 @@ private:
     bool havePending_ = false; // a decoded frame is waiting for its PTS
     double pendingPts_ = 0.0;
     bool atEof_ = false;
+
+    double trimStart_ = -1.0; // seconds; negative = unset
+    double trimEnd_ = -1.0;
 
     bool dragging_ = false;
     bool hasSelection_ = false;

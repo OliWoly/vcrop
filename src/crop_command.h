@@ -5,13 +5,26 @@
 
 #include "coords.h"
 
-// "/dir/video.mp4" -> "/dir/video_cropped.mp4"
-std::string buildOutputPath(const std::string& inputPath);
+// Everything needed to build the ffmpeg invocation. Trim times are in
+// seconds; negative means unset (start falls back to 0, end to the video's
+// end). Either crop, trim, or both must be present.
+struct CropJob {
+    std::string inputPath;
+    bool hasCrop = false;
+    CropRect crop;
+    double trimStart = -1.0;
+    double trimEnd = -1.0;
+
+    bool hasTrim() const { return trimStart >= 0.0 || trimEnd >= 0.0; }
+};
+
+// "/dir/video.mp4" -> "/dir/video_cropped.mp4" (suffix follows the action:
+// _cropped, _trimmed, or _cropped_trimmed).
+std::string buildOutputPath(const CropJob& job);
 
 // The ffmpeg invocation as an argv array (no shell involved when spawning).
-std::vector<std::string> buildFfmpegArgv(const std::string& inputPath,
-                                         const std::string& outputPath,
-                                         const CropRect& r);
+std::vector<std::string> buildFfmpegArgv(const CropJob& job,
+                                         const std::string& outputPath);
 
 // POSIX single-quoting; safe for spaces, quotes, $, etc.
 std::string shellQuote(const std::string& s);
