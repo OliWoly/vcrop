@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 
 VideoLayout computeLayout(int viewW, int viewH, int videoW, int videoH)
 {

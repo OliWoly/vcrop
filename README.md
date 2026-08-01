@@ -37,31 +37,47 @@ Note for Linux: on X11/Wayland the clipboard may not survive the app closing
 unless a clipboard manager is running — the command is also printed to the
 terminal for that reason.
 
+## Install / Uninstall
+
+```sh
+./install.sh      # builds and puts `vcrop` on PATH (~/.local/bin)
+./uninstall.sh    # removes the command, build artifacts, and install.sh's PATH line
+```
+
+`install.sh` builds a release binary into `build/` and symlinks it into
+`~/.local/bin`, so re-running it after changes simply rebuilds and updates
+the link. If `~/.local/bin` is not on your PATH it offers to add it to your
+shell rc file.
+
 ## Building
 
-Dependencies: CMake ≥ 3.24, a C++17 compiler, pkg-config, SDL2, and the
-FFmpeg development libraries. Dear ImGui is fetched automatically by CMake.
+Dependencies: CMake ≥ 3.24, a C++17 compiler, pkg-config, and the FFmpeg
+development libraries. SDL2 and Dear ImGui are vendored: pinned release
+tarballs are downloaded and built by CMake on the first configure, so no
+system installs of those are needed.
 
-macOS:
-
-```sh
-brew install cmake pkg-config sdl2 ffmpeg
-```
-
-Debian/Ubuntu:
+Arch Linux (also CachyOS / EndeavourOS / Manjaro):
 
 ```sh
-sudo apt install build-essential cmake pkg-config libsdl2-dev \
-    libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
+sudo pacman -S --needed base-devel cmake pkg-config ffmpeg \
+    libx11 libxext libxrandr libxinerama libxcursor libxi
 ```
 
-Then:
+The `libx*` packages are needed on X11 systems to build SDL2's video
+drivers; Wayland-only users need `wayland` instead. macOS:
+
+```sh
+brew install cmake pkg-config ffmpeg
+```
+
+Then, to build without installing:
 
 ```sh
 cmake -S . -B build
 cmake --build build -j
-cmake --install build --prefix ~/.local   # puts vcrop on PATH
 ```
+
+or use `./install.sh` to build and put `vcrop` on PATH.
 
 ## Encoding defaults
 
