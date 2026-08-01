@@ -347,6 +347,8 @@ void App::doSeek(double t)
     if (audioDev_ != 0) {
         SDL_ClearQueuedAudio(audioDev_);
         audioQueuedSec_ = 0.0;
+        audioBaseSec_ = 0.0;
+        audioBaseSet_ = false;
         audioEof_ = false;
         if (!audio_.seek(t))
             audioEof_ = true; // no audio beyond this point; video carries on
@@ -361,6 +363,12 @@ bool App::queueAudioChunk()
     std::vector<float> chunk;
     switch (audio_.nextChunk(chunk)) {
     case AudioDecoder::Result::Chunk:
+        // The first chunk after a seek anchors the audio clock: the queue
+        // starts at this sample's PTS, not at zero.
+        if (!audioBaseSet_) {
+            audioBaseSec_ = audio_.chunkPtsSec();
+            audioBaseSet_ = true;
+        }
         if (muted_ || volume_ <= 0.0f) {
             std::fill(chunk.begin(), chunk.end(), 0.0f);
         } else if (volume_ < 1.0f) {
@@ -390,7 +398,7 @@ double App::audioQueuedAheadSec() const
 
 double App::audioPlaybackSec() const
 {
-    return audioQueuedSec_ - audioQueuedAheadSec();
+    return audioBaseSec_ + audioQueuedSec_ - audioQueuedAheadSec();
 }
 
 bool App::audioDone() const

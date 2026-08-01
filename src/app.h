@@ -59,6 +59,8 @@ private:
     // audio stream and playback falls back to the wall clock.
     SDL_AudioDeviceID audioDev_ = 0;
     double audioQueuedSec_ = 0.0; // seconds of audio queued since last seek
+    double audioBaseSec_ = 0.0;   // media time of the oldest queued sample
+    bool audioBaseSet_ = false;
     bool audioEof_ = false;
     bool muted_ = false;
     float volume_ = 1.0f;
