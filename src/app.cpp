@@ -362,22 +362,26 @@ bool App::queueAudioChunk()
 {
     std::vector<float> chunk;
     switch (audio_.nextChunk(chunk)) {
-    case AudioDecoder::Result::Chunk:
+    case AudioDecoder::Result::Chunk: {
         // The first chunk after a seek anchors the audio clock: the queue
         // starts at this sample's PTS, not at zero.
         if (!audioBaseSet_) {
             audioBaseSec_ = audio_.chunkPtsSec();
             audioBaseSet_ = true;
         }
-        if (muted_ || volume_ <= 0.0f) {
+        // Squared gain: a perceptual sweep, so mid-slider is clearly audible
+        // instead of nearly silent (linear gain parks ~-6dB+ in the top half).
+        const float gain = volume_ * volume_;
+        if (muted_ || gain <= 0.0f) {
             std::fill(chunk.begin(), chunk.end(), 0.0f);
-        } else if (volume_ < 1.0f) {
+        } else if (gain < 1.0f) {
             for (float& s : chunk)
-                s *= volume_;
+                s *= gain;
         }
         SDL_QueueAudio(audioDev_, chunk.data(), chunk.size() * sizeof(float));
         audioQueuedSec_ += chunk.size() / (audio_.sampleRate() * audio_.channels());
         return true;
+    }
     case AudioDecoder::Result::Eof:
         audioEof_ = true;
         return false;
@@ -516,7 +520,9 @@ void App::drawUi()
         ImGui::Checkbox("Mute", &muted_);
         ImGui::SameLine();
         ImGui::SetNextItemWidth(160.0f);
-        ImGui::SliderFloat("##volume", &volume_, 0.0f, 1.0f, "Volume %.0f%%");
+        float volPct = volume_ * 100.0f;
+        ImGui::SliderFloat("##volume", &volPct, 0.0f, 100.0f, "Volume %.0f%%");
+        volume_ = volPct / 100.0f;
     } else {
         ImGui::TextDisabled("no audio stream in this file");
     }
