@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Remove vcrop: the installed command, build artifacts, and any PATH line
-# that install.sh added to a shell rc file.
+# Remove vcrop: the installed command, build artifacts, any PATH line that
+# install.sh added to a shell rc file, and the "Open With" registration
+# (desktop entry on Linux, app bundle on macOS).
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+build_dir="$repo_dir/build"
 bin_dir="$HOME/.local/bin"
 bin_path="$bin_dir/vcrop"
+os="$(uname -s)"
 removed=0
 
 remove_item() {
@@ -17,7 +20,7 @@ remove_item() {
     fi
 }
 
-if [[ "$(readlink -f "$bin_path" 2>/dev/null)" == "$(readlink -f "$repo_dir/build/vcrop" 2>/dev/null)" ]]; then
+if [[ "$(readlink "$bin_path" 2>/dev/null || echo "")" == "$build_dir/vcrop" ]]; then
     rm -f "$bin_path"
     echo "removed: $bin_path"
     removed=1
@@ -36,6 +39,23 @@ remove_item "$repo_dir/.cache"
 for d in "$repo_dir"/cmake-build-*; do
     [[ -d "$d" && -f "$d/CMakeCache.txt" ]] && remove_item "$d"
 done
+
+# Open With registrations.
+if [[ "$os" == "Linux" ]]; then
+    remove_item "$HOME/.local/share/applications/vcrop.desktop"
+    if [[ -d "$HOME/.local/share/applications" ]] && ! ls -A "$HOME/.local/share/applications" | grep -q .; then
+        rmdir "$HOME/.local/share/applications"
+        echo "removed: $HOME/.local/share/applications (was empty)"
+    fi
+    command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null || true
+elif [[ "$os" == "Darwin" ]]; then
+    app_path="$HOME/Applications/vcrop.app"
+    if [[ -d "$app_path" ]]; then
+        lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        "$lsregister" -u "$app_path" >/dev/null 2>&1 || true
+        remove_item "$app_path"
+    fi
+fi
 
 # Undo the PATH line install.sh may have appended to a shell rc file.
 line="export PATH=\"$bin_dir:\$PATH\""

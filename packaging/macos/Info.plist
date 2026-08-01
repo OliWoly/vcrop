@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>vcrop</string>
+	<key>CFBundleDisplayName</key>
+	<string>vcrop</string>
+	<key>CFBundleIdentifier</key>
+	<string>local.vcrop</string>
+	<key>CFBundleVersion</key>
+	<string>1.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>vcrop</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.13</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Video</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.movie</string>
+				<string>org.matroska.mkv</string>
+				<string>org.webmproject.webm</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>mp4</string>
+				<string>mov</string>
+				<string>m4v</string>
+				<string>mkv</string>
+				<string>webm</string>
+				<string>avi</string>
+				<string>wmv</string>
+				<string>flv</string>
+				<string>mpg</string>
+				<string>mpeg</string>
+				<string>ts</string>
+				<string>m2ts</string>
+				<string>3gp</string>
+				<string>ogv</string>
+				<string>vob</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

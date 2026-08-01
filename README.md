@@ -41,13 +41,31 @@ terminal for that reason.
 
 ```sh
 ./install.sh      # builds and puts `vcrop` on PATH (~/.local/bin)
-./uninstall.sh    # removes the command, build artifacts, and install.sh's PATH line
+./uninstall.sh    # removes the command, build artifacts, the Open With
+                  # registration, and install.sh's PATH line
 ```
 
 `install.sh` builds a release binary into `build/` and symlinks it into
 `~/.local/bin`, so re-running it after changes simply rebuilds and updates
 the link. If `~/.local/bin` is not on your PATH it offers to add it to your
 shell rc file.
+
+### Open With (file managers)
+
+`install.sh` also registers vcrop so it shows up under *Open With* for video
+files (it never becomes the default player):
+
+- **Linux (Dolphin, GNOME Files, ...):** a desktop entry is written to
+  `~/.local/share/applications/vcrop.desktop` declaring `video/*`, and the
+  KDE service cache is refreshed (`kbuildsycoca6`). If a menu entry does not
+  appear immediately, restart Dolphin.
+- **macOS (Finder):** the binary is wrapped in a `vcrop.app` bundle
+  installed to `~/Applications` and registered with Launch Services. Right
+  click a video → *Open With* → vcrop.
+
+Note for macOS: if vcrop is already running when a file is opened from
+Finder, Launch Services delivers the file to the running instance as an
+Apple event, which the binary ignores. Quit vcrop first.
 
 ## Building
 

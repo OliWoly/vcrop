@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=vcrop
+Comment=Crop and trim videos
+Exec=__VCROP_BIN__ %f
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;
+MimeType=video/*;
