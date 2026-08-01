@@ -16,7 +16,9 @@ public:
     int run(const std::string& path);
 
 private:
-    bool initVideoAndWindow(std::string& err);
+    bool initSdl(std::string& err);
+    bool openVideoAndWindow(std::string& err);
+    bool waitForDropEvent(std::string& path, std::string& err);
     void shutdown();
     void handleEvent(const SDL_Event& e);
     void togglePlay();

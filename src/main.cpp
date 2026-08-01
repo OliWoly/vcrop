@@ -31,10 +31,15 @@ int main(int argc, char** argv)
             return 0;
         }
     }
-    if (argc != 2) {
+    if (argc > 2) {
         printUsage(stderr);
         return 2;
     }
     App app;
-    return app.run(argv[1]);
+    if (argc == 2)
+        return app.run(argv[1]);
+    // Launched by macOS via Finder "Open With" (Launch Services): the file is
+    // delivered as an Apple Event, which SDL2 surfaces as a drop event, so
+    // run without a path and pick it up during startup.
+    return app.run("");
 }

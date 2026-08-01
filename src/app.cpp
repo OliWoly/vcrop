@@ -65,7 +65,19 @@ int App::run(const std::string& path)
 {
     inputPath_ = path;
     std::string err;
-    if (!initVideoAndWindow(err)) {
+    if (!initSdl(err)) {
+        std::fprintf(stderr, "vcrop: error: %s\n", err.c_str());
+        shutdown();
+        return 1;
+    }
+    if (inputPath_.empty() && !waitForDropEvent(inputPath_, err)) {
+        std::fprintf(stderr, "vcrop: error: %s\n", err.c_str());
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "vcrop", err.c_str(),
+                                 nullptr);
+        shutdown();
+        return 1;
+    }
+    if (!openVideoAndWindow(err)) {
         std::fprintf(stderr, "vcrop: error: %s\n", err.c_str());
         shutdown();
         return 1;
@@ -109,16 +121,43 @@ int App::run(const std::string& path)
     return 0;
 }
 
-bool App::initVideoAndWindow(std::string& err)
+bool App::initSdl(std::string& err)
 {
-    if (!decoder_.open(inputPath_, err))
-        return false;
-    duration_ = decoder_.durationSec();
-
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         err = std::string("SDL init failed: ") + SDL_GetError();
         return false;
     }
+    return true;
+}
+
+// When launched from Finder ("Open With"), macOS delivers the document as an
+// Apple Event rather than a command-line argument; SDL2's Cocoa backend
+// surfaces it as an SDL_DROPFILE event (windowID 0, since no window exists
+// yet). Pump events until that arrives or the launch is considered failed.
+bool App::waitForDropEvent(std::string& path, std::string& err)
+{
+    constexpr uint32_t kDropTimeoutMs = 5000;
+    const uint32_t deadline = SDL_GetTicks() + kDropTimeoutMs;
+    while (SDL_GetTicks() < deadline) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_DROPFILE) {
+                path = e.drop.file;
+                SDL_free(e.drop.file);
+                return true;
+            }
+        }
+        SDL_Delay(10);
+    }
+    err = "no video file provided (usage: vcrop <video-file>)";
+    return false;
+}
+
+bool App::openVideoAndWindow(std::string& err)
+{
+    if (!decoder_.open(inputPath_, err))
+        return false;
+    duration_ = decoder_.durationSec();
 
     // Fit the window to the video, capped to the usable display area.
     const int vw = decoder_.width();
