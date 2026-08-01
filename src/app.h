@@ -2,15 +2,13 @@
 
 #include <string>
 
+#include <SDL.h>
+
+#include "audio_decoder.h"
 #include "coords.h"
 #include "crop_command.h"
 #include "playback_clock.h"
 #include "video_decoder.h"
-
-struct SDL_Window;
-struct SDL_Renderer;
-struct SDL_Texture;
-union SDL_Event;
 
 class App {
 public:
@@ -31,6 +29,13 @@ private:
     void doCrop();
     void doCopyCommand();
 
+    // Decodes one audio chunk and queues it on the audio device at the
+    // current volume; returns false when the audio stream is exhausted.
+    bool queueAudioChunk();
+    double audioQueuedAheadSec() const;
+    double audioPlaybackSec() const;
+    bool audioDone() const;
+
     bool selectionValid() const;
     CropRect selectionRect() const;
     bool trimActive() const { return trimStart_ >= 0.0 || trimEnd_ >= 0.0; }
@@ -42,12 +47,21 @@ private:
 
     std::string inputPath_;
     VideoDecoder decoder_;
+    AudioDecoder audio_;
     PlaybackClock clock_;
     SDL_Window* window_ = nullptr;
     SDL_Renderer* renderer_ = nullptr;
     SDL_Texture* texture_ = nullptr;
     VideoLayout layout_{};
     double duration_ = 0.0;
+
+    // Audio playback state; audioDev_ == 0 means the file has no usable
+    // audio stream and playback falls back to the wall clock.
+    SDL_AudioDeviceID audioDev_ = 0;
+    double audioQueuedSec_ = 0.0; // seconds of audio queued since last seek
+    bool audioEof_ = false;
+    bool muted_ = false;
+    float volume_ = 1.0f;
 
     bool havePending_ = false; // a decoded frame is waiting for its PTS
     double pendingPts_ = 0.0;

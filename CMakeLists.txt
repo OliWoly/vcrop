@@ -15,6 +15,7 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
   libavformat
   libavcodec
   libswscale
+  libswresample
   libavutil)
 
 include(FetchContent)
@@ -79,6 +80,7 @@ add_executable(vcrop
   src/main.cpp
   src/app.cpp
   src/video_decoder.cpp
+  src/audio_decoder.cpp
   src/coords.cpp
   src/crop_command.cpp
   src/stb_image_impl.cpp)

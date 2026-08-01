@@ -99,7 +99,7 @@ bool App::initVideoAndWindow(std::string& err)
         return false;
     duration_ = decoder_.durationSec();
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
         err = std::string("SDL init failed: ") + SDL_GetError();
         return false;
     }
@@ -137,6 +137,21 @@ bool App::initVideoAndWindow(std::string& err)
         return false;
     }
 
+    // Audio is optional: files without a usable audio stream play video-only.
+    // The device is kept paused until the queue is primed below.
+    std::string audioErr;
+    if (audio_.open(inputPath_, audioErr)) {
+        SDL_AudioSpec want{};
+        want.freq = static_cast<int>(audio_.sampleRate());
+        want.format = AUDIO_F32SYS;
+        want.channels = static_cast<Uint8>(audio_.channels());
+        want.samples = 2048;
+        audioDev_ = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr,
+                                        SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
+        if (audioDev_ != 0)
+            SDL_PauseAudioDevice(audioDev_, 1);
+    }
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr; // no imgui.ini litter
@@ -154,6 +169,14 @@ bool App::initVideoAndWindow(std::string& err)
     clock_.seekTo(decoder_.framePtsSec());
     clock_.play();
     advancePending();
+
+    // Prime the audio queue with a head start so the first samples are ready
+    // the moment the device unpauses; the video clock then follows the audio.
+    if (audioDev_ != 0) {
+        while (audioQueuedSec_ < 0.05 && !audioEof_)
+            queueAudioChunk();
+        SDL_PauseAudioDevice(audioDev_, 0);
+    }
     return true;
 }
 
@@ -170,6 +193,8 @@ void App::shutdown()
         SDL_DestroyRenderer(renderer_);
     if (window_ != nullptr)
         SDL_DestroyWindow(window_);
+    if (audioDev_ != 0)
+        SDL_CloseAudioDevice(audioDev_);
     SDL_Quit();
 }
 
@@ -191,6 +216,8 @@ void App::handleEvent(const SDL_Event& e)
             trimStart_ = currentTimeClamped();
         else if (e.key.keysym.sym == SDLK_o)
             trimEnd_ = currentTimeClamped();
+        else if (e.key.keysym.sym == SDLK_m)
+            muted_ = !muted_;
         break;
     case SDL_MOUSEBUTTONDOWN:
         if (e.button.button == SDL_BUTTON_LEFT && !io.WantCaptureMouse) {
@@ -223,10 +250,14 @@ void App::togglePlay()
 {
     if (clock_.playing()) {
         clock_.pause();
+        if (audioDev_ != 0)
+            SDL_PauseAudioDevice(audioDev_, 1);
     } else {
         if (atEof_)
             doSeek(0.0);
         clock_.play();
+        if (audioDev_ != 0)
+            SDL_PauseAudioDevice(audioDev_, 0);
     }
 }
 
@@ -234,6 +265,22 @@ void App::updatePlayback()
 {
     if (!clock_.playing())
         return;
+
+    // Keep the audio queue topped up so the device never underruns.
+    if (audioDev_ != 0 && !audioEof_) {
+        int chunks = 0;
+        while (audioQueuedAheadSec() < 0.15 && chunks < 8 && queueAudioChunk())
+            ++chunks;
+    }
+
+    // The audio clock is the playback master while audio is queued or still
+    // decoding; the video presents its frames against that clock.
+    if (audioDev_ != 0 && (SDL_GetQueuedAudioSize(audioDev_) > 0 || !audioEof_)) {
+        const double audioNow = audioPlaybackSec();
+        if (audioNow >= 0.0)
+            clock_.seekTo(audioNow);
+    }
+
     // Present every frame whose PTS has come due, capped so a stall cannot
     // trigger a decode death spiral.
     int catchup = 0;
@@ -245,6 +292,14 @@ void App::updatePlayback()
     // If we are far behind (e.g. the window was blocked), snap instead of chasing.
     if (havePending_ && clock_.now() - pendingPts_ > 1.0)
         clock_.seekTo(pendingPts_);
+
+    // End of playback: the last video frame holds while the audio drains,
+    // then the clock stops at the duration.
+    if (atEof_ && audioDone()) {
+        clock_.pause();
+        if (duration_ > 0.0)
+            clock_.seekTo(duration_);
+    }
 }
 
 void App::advancePending()
@@ -255,15 +310,16 @@ void App::advancePending()
         pendingPts_ = decoder_.framePtsSec();
         break;
     case VideoDecoder::Result::Eof:
+        // Keep the clock running so the audio can drain; updatePlayback()
+        // pauses once both streams are done.
         havePending_ = false;
         atEof_ = true;
-        clock_.pause();
-        if (duration_ > 0.0)
-            clock_.seekTo(duration_);
         break;
     case VideoDecoder::Result::Error:
         havePending_ = false;
         clock_.pause();
+        if (audioDev_ != 0)
+            SDL_PauseAudioDevice(audioDev_, 1);
         lastError_ = "decode error; playback stopped";
         break;
     }
@@ -285,7 +341,61 @@ void App::doSeek(double t)
     uploadFrame();
     clock_.seekTo(decoder_.framePtsSec());
     atEof_ = false;
+
+    // Drop whatever audio was queued for the old position and restart the
+    // audio clock at the new one.
+    if (audioDev_ != 0) {
+        SDL_ClearQueuedAudio(audioDev_);
+        audioQueuedSec_ = 0.0;
+        audioEof_ = false;
+        if (!audio_.seek(t))
+            audioEof_ = true; // no audio beyond this point; video carries on
+        while (audioQueuedSec_ < 0.05 && !audioEof_)
+            queueAudioChunk();
+    }
     advancePending();
+}
+
+bool App::queueAudioChunk()
+{
+    std::vector<float> chunk;
+    switch (audio_.nextChunk(chunk)) {
+    case AudioDecoder::Result::Chunk:
+        if (muted_ || volume_ <= 0.0f) {
+            std::fill(chunk.begin(), chunk.end(), 0.0f);
+        } else if (volume_ < 1.0f) {
+            for (float& s : chunk)
+                s *= volume_;
+        }
+        SDL_QueueAudio(audioDev_, chunk.data(), chunk.size() * sizeof(float));
+        audioQueuedSec_ += chunk.size() / (audio_.sampleRate() * audio_.channels());
+        return true;
+    case AudioDecoder::Result::Eof:
+        audioEof_ = true;
+        return false;
+    case AudioDecoder::Result::Error:
+        audioEof_ = true;
+        lastError_ = "audio decode error; continuing video-only";
+        return false;
+    }
+    return false; // unreachable; all enum values handled above
+}
+
+double App::audioQueuedAheadSec() const
+{
+    const double bytesPerSec =
+        audio_.sampleRate() * audio_.channels() * sizeof(float);
+    return SDL_GetQueuedAudioSize(audioDev_) / bytesPerSec;
+}
+
+double App::audioPlaybackSec() const
+{
+    return audioQueuedSec_ - audioQueuedAheadSec();
+}
+
+bool App::audioDone() const
+{
+    return audioDev_ == 0 || (audioEof_ && SDL_GetQueuedAudioSize(audioDev_) == 0);
 }
 
 void App::drawVideoAndOverlay()
@@ -392,6 +502,16 @@ void App::drawUi()
     if (!trimRangeOk())
         ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
                            "trim end must be after trim start");
+
+    ImGui::Separator();
+    if (audioDev_ != 0) {
+        ImGui::Checkbox("Mute", &muted_);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.0f);
+        ImGui::SliderFloat("##volume", &volume_, 0.0f, 1.0f, "Volume %.0f%%");
+    } else {
+        ImGui::TextDisabled("no audio stream in this file");
+    }
 
     ImGui::Separator();
     ImGui::BeginDisabled(!actionReady());

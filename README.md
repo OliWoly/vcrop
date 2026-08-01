@@ -27,8 +27,11 @@ vcrop video.mp4
   `video_cropped_trimmed.mp4`).
 - **Copy command** puts the equivalent shell command on the clipboard,
   prints it verbatim to stdout as a fallback, and closes the app.
-- Space toggles play/pause, Esc quits, the slider seeks. Playback is
-  video-only; audio is passed through untouched (`-c:a copy`) when
+- Space toggles play/pause, M toggles mute, Esc quits, the slider seeks.
+  Files with an audio stream play it in sync with the video — audio is the
+  playback master, so the picture never drifts. Use the **Mute** checkbox or
+  the **Volume** slider in the panel to control the sound (the `m` key
+  toggles mute). Audio is passed through untouched (`-c:a copy`) when
   processing.
 
 Requires the `ffmpeg` binary on `PATH` at crop time.

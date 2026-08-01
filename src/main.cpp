@@ -16,7 +16,8 @@ void printUsage(std::FILE* out)
                "the input, or \"Copy command\" to put the equivalent ffmpeg\n"
                "command on the clipboard. Either action closes the app.\n"
                "\n"
-               "keys: space = play/pause, i = trim start, o = trim end, esc = quit\n",
+               "keys: space = play/pause, i = trim start, o = trim end,\n"
+               "      m = mute, esc = quit\n",
                out);
 }
 
