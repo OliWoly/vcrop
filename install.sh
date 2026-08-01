@@ -50,6 +50,77 @@ if [[ ":$PATH:" != *":$bin_dir:"* ]]; then
     fi
 fi
 
+# Dolphin's inline "Open With" menu is built from the [Added Associations]
+# section of ~/.config/mimeapps.list; merely declaring MimeType= in the
+# desktop entry only gets an app into "Other Applications". Merge vcrop into
+# the associations for every video MIME type the system knows about, without
+# touching [Default Applications].
+add_mime_associations() {
+    local apps_file="$HOME/.config/mimeapps.list"
+    local types_file tmp
+    types_file="$(mktemp)"
+    tmp="$(mktemp)"
+
+    # Video MIME types known to the system: /usr/share/mime/video/*.xml,
+    # plus any video/* keys already listed in mimeapps.list (covers types
+    # without an XML entry).
+    {
+        for f in /usr/share/mime/video/*.xml; do
+            [[ -f "$f" ]] && printf 'video/%s\n' "$(basename "$f" .xml)"
+        done
+        if [[ -f "$apps_file" ]]; then
+            sed -n 's/^\(video\/[^=]*\)=.*/\1/p' "$apps_file"
+        fi
+    } | sort -u > "$types_file"
+
+    if [[ ! -f "$apps_file" ]]; then
+        mkdir -p "$(dirname "$apps_file")"
+        {
+            printf '[Added Associations]\n'
+            while read -r t; do
+                printf '%s=vcrop.desktop;\n' "$t"
+            done < "$types_file"
+        } > "$apps_file"
+    else
+        awk -v types_file="$types_file" '
+            BEGIN {
+                while ((getline t < types_file) > 0) video_types[t] = 1
+                section = ""
+                pending = 0
+            }
+            function flush_pending() {
+                for (t in video_types) print t "=vcrop.desktop;"
+                pending = 0
+            }
+            /^\[/ {
+                if (pending) flush_pending()
+                section = $0
+                print
+                next
+            }
+            {
+                if (section == "[Added Associations]") {
+                    pending = 1
+                    eq = index($0, "=")
+                    key = substr($0, 1, eq - 1)
+                    if (key in video_types) {
+                        delete video_types[key]
+                        val = substr($0, eq + 1)
+                        if (val ~ /(^|;)vcrop\.desktop(;|$)/) { print; next }
+                        sub(/;$/, "", $0)
+                        print $0 ";vcrop.desktop;"
+                        next
+                    }
+                }
+                print
+            }
+            END { if (pending) flush_pending() }
+        ' "$apps_file" > "$tmp" && mv "$tmp" "$apps_file"
+    fi
+    rm -f "$types_file" "$tmp"
+    echo "registered vcrop in: $apps_file"
+}
+
 install_open_with() {
     case "$os" in
         Linux)
@@ -65,6 +136,7 @@ install_open_with() {
             if command -v desktop-file-validate >/dev/null 2>&1; then
                 desktop-file-validate "$desktop_path"
             fi
+            add_mime_associations
             if command -v kbuildsycoca6 >/dev/null 2>&1; then
                 kbuildsycoca6 >/dev/null || true
                 echo "refreshed KDE service cache"

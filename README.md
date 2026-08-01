@@ -56,9 +56,11 @@ shell rc file.
 files (it never becomes the default player):
 
 - **Linux (Dolphin, GNOME Files, ...):** a desktop entry is written to
-  `~/.local/share/applications/vcrop.desktop` declaring `video/*`, and the
-  KDE service cache is refreshed (`kbuildsycoca6`). If a menu entry does not
-  appear immediately, restart Dolphin.
+  `~/.local/share/applications/vcrop.desktop` declaring `video/*`, and vcrop
+  is added to the `[Added Associations]` of `~/.config/mimeapps.list` for
+  every video MIME type on the system, so it appears directly in the *Open
+  With* submenu. The KDE service cache is refreshed (`kbuildsycoca6`); if a
+  menu entry does not appear immediately, restart Dolphin.
 - **macOS (Finder):** the binary is wrapped in a `vcrop.app` bundle
   installed to `~/Applications` and registered with Launch Services. Right
   click a video → *Open With* → vcrop.

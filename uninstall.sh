@@ -47,6 +47,26 @@ if [[ "$os" == "Linux" ]]; then
         rmdir "$HOME/.local/share/applications"
         echo "removed: $HOME/.local/share/applications (was empty)"
     fi
+    apps_file="$HOME/.config/mimeapps.list"
+    if [[ -f "$apps_file" ]]; then
+        tmp="$(mktemp)"
+        awk '
+            /^\[/ { section = $0; print; next }
+            section == "[Added Associations]" && /^video\// {
+                eq = index($0, "=")
+                key = substr($0, 1, eq - 1)
+                val = substr($0, eq + 1)
+                gsub(/;?vcrop\.desktop/, "", val)
+                gsub(/^;+|;+$/, "", val)
+                if (val == "") { next }
+                print key "=" val ";"
+                next
+            }
+            { print }
+        ' "$apps_file" > "$tmp" && mv "$tmp" "$apps_file"
+        echo "removed vcrop from: $apps_file"
+        removed=1
+    fi
     command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null || true
 elif [[ "$os" == "Darwin" ]]; then
     app_path="$HOME/Applications/vcrop.app"
