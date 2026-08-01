@@ -65,9 +65,18 @@ files (it never becomes the default player):
   installed to `~/Applications` and registered with Launch Services. Right
   click a video → *Open With* → vcrop.
 
+The icon (file-manager menus and the app window) comes from
+`packaging/icons/vcrop.png`. To use your own, replace that file and
+re-run `./install.sh` (menus) plus a rebuild for the window icon
+(`./install.sh` rebuilds, or `cmake --build build`).
+
 Note for macOS: if vcrop is already running when a file is opened from
 Finder, Launch Services delivers the file to the running instance as an
 Apple event, which the binary ignores. Quit vcrop first.
+
+Note for Wayland: SDL2 cannot set window icons under Wayland; the taskbar
+icon there is shown from the desktop entry instead, which ships the same
+image.
 
 ## Building
 

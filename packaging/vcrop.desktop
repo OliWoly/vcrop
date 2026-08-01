@@ -3,6 +3,7 @@ Type=Application
 Name=vcrop
 Comment=Crop and trim videos
 Exec=__VCROP_BIN__ %f
+Icon=vcrop
 Terminal=false
 Categories=AudioVideo;Video;AudioVideoEditing;
 MimeType=video/*;

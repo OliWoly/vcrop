@@ -14,7 +14,26 @@ extern "C" {
 #include <libavutil/frame.h>
 }
 
+#include "icon_data.h"
+#include "stb_image.h"
+
 namespace {
+
+void applyWindowIcon(SDL_Window* window)
+{
+    int w = 0, h = 0, n = 0;
+    unsigned char* pixels =
+        stbi_load_from_memory(kIconPng, kIconPngLen, &w, &h, &n, 4);
+    if (pixels == nullptr)
+        return;
+    SDL_Surface* icon = SDL_CreateRGBSurfaceWithFormatFrom(
+        pixels, w, h, 32, w * 4, SDL_PIXELFORMAT_RGBA32);
+    if (icon != nullptr) {
+        SDL_SetWindowIcon(window, icon);
+        SDL_FreeSurface(icon);
+    }
+    stbi_image_free(pixels);
+}
 
 std::string formatTime(double t)
 {
@@ -104,6 +123,7 @@ bool App::initVideoAndWindow(std::string& err)
         err = std::string("cannot create window: ") + SDL_GetError();
         return false;
     }
+    applyWindowIcon(window_);
     renderer_ = SDL_CreateRenderer(
         window_, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (renderer_ == nullptr) {

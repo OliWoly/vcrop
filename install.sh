@@ -136,6 +136,23 @@ install_open_with() {
             if command -v desktop-file-validate >/dev/null 2>&1; then
                 desktop-file-validate "$desktop_path"
             fi
+            # Icon (named, so any icon theme engine can find it). hicolor's
+            # index.theme only declares sizes up to 512x512, scalable and
+            # symbolic, so 1024x1024 would be invisible to KDE; install into
+            # declared directories instead (512x512@2x holds the 1024px
+            # image for HiDPI).
+            hicolor_dir="$HOME/.local/share/icons/hicolor"
+            for sub in "512x512/apps" "512x512@2x/apps" "scalable/apps"; do
+                mkdir -p "$hicolor_dir/$sub"
+            done
+            cp "$repo_dir/packaging/icons/vcrop.png" "$hicolor_dir/512x512/apps/vcrop.png"
+            cp "$repo_dir/packaging/icons/vcrop.png" "$hicolor_dir/512x512@2x/apps/vcrop.png"
+            cp "$repo_dir/packaging/icons/vcrop.svg" "$hicolor_dir/scalable/apps/vcrop.svg"
+            echo "installed icons: $hicolor_dir/{512x512,512x512@2x,scalable}/apps"
+            if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+                gtk-update-icon-cache -f -q "$hicolor_dir" \
+                    2>/dev/null || true
+            fi
             add_mime_associations
             if command -v kbuildsycoca6 >/dev/null 2>&1; then
                 kbuildsycoca6 >/dev/null || true
@@ -148,9 +165,24 @@ install_open_with() {
             echo "==> registering with Finder (Open With)"
             app_dir="$HOME/Applications"
             app_path="$app_dir/vcrop.app"
-            mkdir -p "$app_path/Contents/MacOS"
+            mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
             cp "$build_dir/vcrop" "$app_path/Contents/MacOS/vcrop"
             cp "$repo_dir/packaging/macos/Info.plist" "$app_path/Contents/Info.plist"
+            # Build vcrop.icns from the shared 1024px source PNG using only
+            # tools built into macOS (sips resizes, iconutil wraps).
+            iconset="$(mktemp -d)/vcrop.iconset"
+            mkdir -p "$iconset"
+            for spec in "16:16x16" "32:16x16@2x" "32:32x32" "64:32x32@2x" \
+                        "128:128x128" "256:128x128@2x" "256:256x256" \
+                        "512:256x256@2x" "512:512x512" "1024:512x512@2x"; do
+                size="${spec%%:*}"
+                name="${spec##*:}"
+                sips -z "$size" "$size" "$repo_dir/packaging/icons/vcrop.png" \
+                    --out "$iconset/icon_${name}.png" >/dev/null
+            done
+            iconutil -c icns "$iconset" -o "$app_path/Contents/Resources/vcrop.icns"
+            rm -rf "$(dirname "$iconset")"
+            echo "built bundle icon: $app_path/Contents/Resources/vcrop.icns"
             lsregister="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
             "$lsregister" -f "$app_path"
             echo "registered app bundle: $app_path"

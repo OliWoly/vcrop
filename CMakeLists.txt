@@ -32,6 +32,11 @@ FetchContent_Declare(sdl2
   URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-2.32.10.tar.gz
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
 
+# Single-header PNG decoder for the embedded window icon.
+FetchContent_Declare(stb_image
+  URL https://github.com/nothings/stb/archive/013ac3beddff3dbffafd5177e7972067cd2b5083.tar.gz
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+
 # SDL2 builds itself via CMake; skip its tests to keep the build lean.
 set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(sdl2)
@@ -54,13 +59,33 @@ if(NOT imgui_POPULATED)
   target_link_libraries(imgui_lib PUBLIC SDL2::SDL2)
 endif()
 
+FetchContent_GetProperties(stb_image)
+if(NOT stb_image_POPULATED)
+  FetchContent_Populate(stb_image)
+endif()
+
+# Embed the app icon (packaging/icons/vcrop.png) into the binary so the
+# window icon works no matter where the binary lives. Swap that PNG to
+# replace the icon; the header regenerates on reconfigure (CONFIGURE_DEPENDS).
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vcrop.png" _vcrop_icon_hex HEX)
+string(REGEX REPLACE "(..)" "0x\\1," _vcrop_icon_bytes "${_vcrop_icon_hex}")
+file(SIZE "${CMAKE_CURRENT_SOURCE_DIR}/packaging/icons/vcrop.png" _vcrop_icon_size)
+set(VCROP_ICON_BYTES "${_vcrop_icon_bytes}")
+set(VCROP_ICON_SIZE "${_vcrop_icon_size}")
+configure_file(cmake/icon_data.h.in "${CMAKE_BINARY_DIR}/generated/icon_data.h"
+  CONFIGURE_DEPENDS)
+
 add_executable(vcrop
   src/main.cpp
   src/app.cpp
   src/video_decoder.cpp
   src/coords.cpp
-  src/crop_command.cpp)
+  src/crop_command.cpp
+  src/stb_image_impl.cpp)
 target_compile_options(vcrop PRIVATE -Wall -Wextra -Wpedantic)
+target_include_directories(vcrop PRIVATE
+  "${CMAKE_BINARY_DIR}/generated"
+  "${stb_image_SOURCE_DIR}")
 target_link_libraries(vcrop PRIVATE
   imgui_lib
   SDL2::SDL2

@@ -47,6 +47,21 @@ if [[ "$os" == "Linux" ]]; then
         rmdir "$HOME/.local/share/applications"
         echo "removed: $HOME/.local/share/applications (was empty)"
     fi
+    hicolor_dir="$HOME/.local/share/icons/hicolor"
+    for icon in \
+        "$hicolor_dir/512x512/apps/vcrop.png" \
+        "$hicolor_dir/512x512@2x/apps/vcrop.png" \
+        "$hicolor_dir/scalable/apps/vcrop.svg"; do
+        remove_item "$icon"
+    done
+    # Prune the dirs we created, but only if they are empty (hicolor is
+    # shared with other apps).
+    for d in \
+        "$hicolor_dir/512x512/apps" "$hicolor_dir/512x512" \
+        "$hicolor_dir/512x512@2x/apps" "$hicolor_dir/512x512@2x" \
+        "$hicolor_dir/scalable/apps" "$hicolor_dir/scalable"; do
+        [[ -d "$d" ]] && rmdir "$d" 2>/dev/null && echo "removed: $d (was empty)"
+    done
     apps_file="$HOME/.config/mimeapps.list"
     if [[ -f "$apps_file" ]]; then
         tmp="$(mktemp)"

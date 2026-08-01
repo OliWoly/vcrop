@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- vcrop icon: video frame with crop-corner brackets -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#1f2430"/>
+  <rect x="192" y="192" width="640" height="640" rx="96" fill="#2d3445"/>
+  <path d="M 448 352 L 672 512 L 448 672 Z" fill="#d7dae3"/>
+  <g stroke="#4cc2ff" stroke-width="56" stroke-linecap="round" fill="none">
+    <path d="M 352 160 L 192 160 Q 160 160 160 192 L 160 352"/>
+    <path d="M 672 160 L 832 160 Q 864 160 864 192 L 864 352"/>
+    <path d="M 352 864 L 192 864 Q 160 864 160 832 L 160 672"/>
+    <path d="M 672 864 L 832 864 Q 864 864 864 832 L 864 672"/>
+  </g>
+</svg>

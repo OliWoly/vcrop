@@ -1,0 +1,8 @@
+// Generated from packaging/icons/vcrop.png by CMake. Do not edit.
+#pragma once
+
+static const unsigned char kIconPng[] = {
+    @VCROP_ICON_BYTES@
+};
+
+static const int kIconPngLen = @VCROP_ICON_SIZE@;
