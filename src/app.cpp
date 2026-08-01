@@ -52,6 +52,13 @@ std::string formatTimePrecise(double t)
     return buf;
 }
 
+// Minimum crop-box size (video pixels, per axis) for a drag to count as a
+// selection. Smaller drags are treated as clicks: the hovered coordinates
+// are copied to the clipboard instead.
+constexpr int kMinCropW = 10;
+constexpr int kMinCropH = 10;
+constexpr uint32_t kCopyFeedbackMs = 1500; // how long "Copied x, y" is shown
+
 } // namespace
 
 int App::run(const std::string& path)
@@ -74,7 +81,16 @@ int App::run(const std::string& path)
 
         int w = 0, h = 0;
         SDL_GetRendererOutputSize(renderer_, &w, &h);
-        layout_ = computeLayout(w, h, decoder_.width(), decoder_.height());
+        // When the UI menu is collapsed, letterbox the video clear of the
+        // title bar (parked at 10,10) so it never covers the top-left corner.
+        constexpr int kPadLeft = 150;
+        constexpr int kPadTop = 36;
+        const int padLeft = uiCollapsed_ ? kPadLeft : 0;
+        const int padTop = uiCollapsed_ ? kPadTop : 0;
+        layout_ = computeLayout(w - padLeft, h - padTop, decoder_.width(),
+                                decoder_.height());
+        layout_.dst.x += static_cast<float>(padLeft);
+        layout_.dst.y += static_cast<float>(padTop);
 
         ImGui_ImplSDLRenderer2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
@@ -238,8 +254,15 @@ void App::handleEvent(const SDL_Event& e)
         }
         break;
     case SDL_MOUSEBUTTONUP:
-        if (e.button.button == SDL_BUTTON_LEFT)
+        if (e.button.button == SDL_BUTTON_LEFT) {
+            if (dragging_) {
+                const CropRect raw =
+                    normalizeRect(anchorX_, anchorY_, curX_, curY_);
+                if (raw.w < kMinCropW || raw.h < kMinCropH)
+                    copyHoveredCoords(anchorX_, anchorY_);
+            }
             dragging_ = false;
+        }
         break;
     default:
         break;
@@ -413,7 +436,7 @@ bool App::audioDone() const
 void App::drawVideoAndOverlay()
 {
     SDL_RenderCopyF(renderer_, texture_, nullptr, &layout_.dst);
-    if (!hasSelection_)
+    if (!selectionValid())
         return;
 
     const SDL_FRect sel = videoRectToWindow(layout_, selectionRect());
@@ -455,6 +478,9 @@ void App::drawUi()
         ImGui::Text("Cursor: %4d, %4d", vx, vy);
     else
         ImGui::TextDisabled("Cursor: outside video");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Hide"))
+        ImGui::SetWindowCollapsed(true);
 
     if (selectionValid()) {
         const CropRect r = selectionRect();
@@ -539,7 +565,47 @@ void App::drawUi()
     if (!lastError_.empty())
         ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "%s",
                            lastError_.c_str());
+    uiCollapsed_ = ImGui::IsWindowCollapsed();
     ImGui::End();
+
+    if (uiCollapsed_ || copyFeedbackActive())
+        drawHoverOverlay(vx, vy, hovering);
+}
+
+void App::drawHoverOverlay(int vx, int vy, bool hovering)
+{
+    const SDL_FRect& dst = layout_.dst;
+    ImGui::SetNextWindowPos(ImVec2(dst.x + dst.w / 2.0f, dst.y + dst.h / 2.0f),
+                            ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    ImGui::Begin("##hover-overlay", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoInputs |
+                     ImGuiWindowFlags_NoFocusOnAppearing |
+                     ImGuiWindowFlags_NoNav);
+    if (copyFeedbackActive())
+        ImGui::Text("%s", copyFeedback_.c_str());
+    else if (hovering)
+        ImGui::Text("%d, %d", vx, vy);
+    else
+        ImGui::TextDisabled("outside video");
+    ImGui::End();
+}
+
+void App::copyHoveredCoords(int vx, int vy)
+{
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%d, %d", vx, vy);
+    SDL_SetClipboardText(buf);
+    copyFeedback_ = std::string("Copied ") + buf;
+    copyFeedbackUntil_ = SDL_GetTicks() + kCopyFeedbackMs;
+    hasSelection_ = false;
+    dragging_ = false;
+}
+
+bool App::copyFeedbackActive() const
+{
+    return SDL_GetTicks() < copyFeedbackUntil_;
 }
 
 bool App::selectionValid() const
@@ -547,7 +613,7 @@ bool App::selectionValid() const
     if (!hasSelection_)
         return false;
     const CropRect raw = normalizeRect(anchorX_, anchorY_, curX_, curY_);
-    return raw.w >= 2 && raw.h >= 2;
+    return raw.w >= kMinCropW && raw.h >= kMinCropH;
 }
 
 CropRect App::selectionRect() const

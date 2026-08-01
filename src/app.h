@@ -26,6 +26,9 @@ private:
     void doSeek(double t);
     void drawVideoAndOverlay();
     void drawUi();
+    void drawHoverOverlay(int vx, int vy, bool hovering);
+    void copyHoveredCoords(int vx, int vy);
+    bool copyFeedbackActive() const;
     void doCrop();
     void doCopyCommand();
 
@@ -77,8 +80,12 @@ private:
     int anchorX_ = 0, anchorY_ = 0; // drag anchor, video space
     int curX_ = 0, curY_ = 0;       // drag current point, video space
 
+    std::string copyFeedback_;
+    uint32_t copyFeedbackUntil_ = 0; // SDL_GetTicks() deadline; 0 = inactive
+
     float seekUi_ = 0.0f;
     bool scrubbing_ = false;
+    bool uiCollapsed_ = false;
     bool quitRequested_ = false;
     std::string lastError_;
 };
