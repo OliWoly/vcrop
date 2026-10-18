@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Service
+X-KDE-ServiceTypes=KonqPopupMenu/Plugin
+MimeType=video/*;
+Actions=vcrop;
+X-KDE-Priority=TopLevel
+
+[Desktop Action vcrop]
+Name=Crop / Trim Video…
+Icon=vcrop
+Exec=@VCROP_EXEC@ %f

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=VCrop
+GenericName=Video Cropper
+Comment=Crop and trim videos
+Exec=@VCROP_EXEC@ %f
+Icon=vcrop
+Terminal=false
+Categories=AudioVideo;Video;AudioVideoEditing;Qt;
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;video/mp2t;video/x-flv;video/ogg;video/3gpp;video/x-ms-wmv;video/x-m4v;
+StartupWMClass=vcrop
