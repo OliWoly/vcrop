@@ -114,11 +114,16 @@ at most about 10 ms off), and one of two presets is used for the video:
 
 | Preset | Encoder settings | Use it for |
 | --- | --- | --- |
-| **H.265 perceptually lossless (RF 20)** (default) | x265, CRF 20, `slow`; 10-bit sources stay 10-bit, HDR tags and mastering metadata are kept; `hvc1` tag in MP4/MOV | archiving: small files that look like the source, slow to encode |
+| **H.265 perceptually lossless (10-bit)** (default) | x265, CRF 14, `slow`, or with **Hardware encoder** VA-API at constant QP 16; always 10-bit (Main10), HDR tags and mastering metadata are kept; `hvc1` tag in MP4/MOV | archiving: files that look like the source and stream in browsers that play H.265 |
 | **Maximum compatibility (H.264)** | x264, CRF 18, `veryfast`, always 8-bit | files that must play anywhere; fast |
 
-- **Hardware encoder** applies to the H.264 preset only: VideoToolbox on macOS, or
-  NVENC / VA-API on Linux, falling back to x264 if none can be opened.
+- **Hardware encoder**: for H.265, VA-API on Linux (AMD and Intel GPUs), falling back
+  to x265. It is many times faster and matches x265's quality in files about 1.5–2×
+  the size; macOS has no hardware H.265 path yet. For H.264, VideoToolbox on macOS
+  or NVENC / VA-API on Linux, falling back to x264.
+- The H.265 settings were chosen by measuring VMAF on 1440p60 game recordings: both
+  stay within about 0.5–2.5 points of the source scored against itself, well under
+  one just-noticeable difference (about 6 points).
 - Exports go to `.mp4`, `.mov` or `.mkv`. MP4 and MOV are written "web optimised"
   (index at the front). The file is written as `<name>.part` and renamed once it is
   complete.

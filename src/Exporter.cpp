@@ -15,12 +15,14 @@
 
 extern "C" {
 #include <libavcodec/avcodec.h>
+#include <libavcodec/bsf.h>
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
 #include <libavformat/avformat.h>
 #include <libavutil/display.h>
 #include <libavutil/hwcontext.h>
+#include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libavutil/pixdesc.h>
 }
@@ -77,6 +79,9 @@ struct PacketFree {
 };
 struct BufferUnref {
     void operator()(AVBufferRef *b) const { av_buffer_unref(&b); }
+};
+struct BsfFree {
+    void operator()(AVBSFContext *b) const { av_bsf_free(&b); }
 };
 
 constexpr int64_t kNoEnd = std::numeric_limits<int64_t>::max();
@@ -432,12 +437,12 @@ private:
 
     AVPixelFormat softwareFormatFor(const AVCodec *codec, EncoderChoice::Kind kind) const
     {
+        // The quality preset is always 10 bit: it keeps deep sources deep and
+        // spares 8-bit ones banding, at no cost in size. The compatible one is
+        // always 8 bit.
+        const bool deep = m_job.preset == ExportPreset::HevcQuality;
         if (kind == EncoderChoice::Vaapi)
-            return AV_PIX_FMT_NV12;
-        // The quality preset keeps high bit depth sources at 10 bit; the
-        // compatible one is always 8 bit.
-        const AVPixFmtDescriptor *source = av_pix_fmt_desc_get(m_srcFormat);
-        const bool deep = m_job.preset == ExportPreset::HevcQuality && source && source->comp[0].depth > 8;
+            return deep ? AV_PIX_FMT_P010 : AV_PIX_FMT_NV12;
         const void *configs = nullptr;
         int count = 0;
         if (avcodec_get_supported_config(nullptr, codec, AV_CODEC_CONFIG_PIX_FORMAT, 0, &configs, &count) < 0
@@ -572,15 +577,17 @@ private:
 
         const double fps = enc->framerate.num > 0 ? av_q2d(enc->framerate) : 30.0;
         AVDictionary *options = nullptr;
-        if (std::strcmp(choice.name, "libx265") == 0) {
-            av_dict_set(&options, "preset", "slow", 0);
-            av_dict_set(&options, "crf", "20", 0);
+        if (codec->id == AV_CODEC_ID_HEVC) {
             // Carry HDR mastering metadata over to the new stream.
             for (AVFrameSideDataType type :
                  {AV_FRAME_DATA_MASTERING_DISPLAY_METADATA, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL}) {
                 if (const AVFrameSideData *sd = av_frame_get_side_data(m_probe.get(), type))
                     av_frame_side_data_clone(&enc->decoded_side_data, &enc->nb_decoded_side_data, sd, 0);
             }
+        }
+        if (std::strcmp(choice.name, "libx265") == 0) {
+            av_dict_set(&options, "preset", "slow", 0);
+            av_dict_set(&options, "crf", "14", 0);
         } else if (std::strcmp(choice.name, "libx264") == 0) {
             av_dict_set(&options, "preset", "veryfast", 0);
             av_dict_set(&options, "crf", "18", 0);
@@ -595,7 +602,9 @@ private:
             case EncoderChoice::Vaapi:
                 enc->hw_frames_ctx = av_buffer_ref(av_buffersink_get_hw_frames_ctx(m_sink));
                 av_dict_set(&options, "rc_mode", "CQP", 0);
-                av_dict_set(&options, "qp", "20", 0);
+                // Without x265's adaptive quantisation the H.265 preset needs
+                // a lower QP to stay as close to the source as CRF 14 does.
+                av_dict_set(&options, "qp", codec->id == AV_CODEC_ID_HEVC ? "16" : "20", 0);
                 break;
             case EncoderChoice::VideoToolbox:
             case EncoderChoice::Software:
@@ -608,16 +617,73 @@ private:
         check(err, tr("Could not open %1").arg(QLatin1String(choice.name)));
     }
 
+    // Encodes a black frame through the pipeline just built and returns the
+    // parameter sets the encoder wrote in front of it. This uses the
+    // pipeline up, so it has to be built again afterwards.
+    QByteArray encodedParameterSets()
+    {
+        const QString error = tr("Could not read the hardware encoder's stream headers");
+        std::unique_ptr<AVFrame, FrameFree> blank(av_frame_alloc());
+        blank->format = m_srcFormat;
+        blank->width = m_srcWidth;
+        blank->height = m_srcHeight;
+        blank->sample_aspect_ratio = m_srcAspect;
+        blank->colorspace = m_srcColorSpace;
+        blank->color_range = m_srcColorRange;
+        check(av_frame_get_buffer(blank.get(), 0), error);
+        const ptrdiff_t linesizes[4] = {blank->linesize[0], blank->linesize[1], blank->linesize[2], blank->linesize[3]};
+        check(av_image_fill_black(blank->data, linesizes, m_srcFormat, m_srcColorRange, m_srcWidth, m_srcHeight),
+              error);
+        blank->pts = 0;
+        check(av_buffersrc_add_frame_flags(m_src, blank.get(), 0), error);
+        check(av_buffersrc_add_frame_flags(m_src, nullptr, 0), error);
+        while (av_buffersink_get_frame(m_sink, m_filtered.get()) >= 0) {
+            check(avcodec_send_frame(m_enc.get(), m_filtered.get()), error);
+            av_frame_unref(m_filtered.get());
+        }
+        check(avcodec_send_frame(m_enc.get(), nullptr), error);
+
+        AVBSFContext *bsf = nullptr;
+        check(av_bsf_alloc(av_bsf_get_by_name("extract_extradata"), &bsf), error);
+        const std::unique_ptr<AVBSFContext, BsfFree> extract(bsf);
+        check(avcodec_parameters_from_context(bsf->par_in, m_enc.get()), error);
+        bsf->time_base_in = m_enc->time_base;
+        check(av_bsf_init(bsf), error);
+        QByteArray sets;
+        while (sets.isEmpty() && avcodec_receive_packet(m_enc.get(), m_encPkt.get()) >= 0) {
+            check(av_bsf_send_packet(bsf, m_encPkt.get()), error);
+            while (av_bsf_receive_packet(bsf, m_encPkt.get()) >= 0) {
+                size_t size = 0;
+                if (const uint8_t *data = av_packet_get_side_data(m_encPkt.get(), AV_PKT_DATA_NEW_EXTRADATA, &size))
+                    sets = QByteArray(reinterpret_cast<const char *>(data), qsizetype(size));
+                av_packet_unref(m_encPkt.get());
+            }
+        }
+        return sets;
+    }
+
+    void resetPipeline()
+    {
+        m_enc.reset();
+        m_graph.reset();
+        m_src = m_sink = nullptr;
+        m_hwDevice.reset();
+    }
+
     void openEncoder()
     {
         const bool hevc = m_job.preset == ExportPreset::HevcQuality;
-        const bool hardware = m_job.hardware && !hevc;
+        const bool hardware = m_job.hardware;
         requireContainerSupport(hevc ? AV_CODEC_ID_HEVC : AV_CODEC_ID_H264);
 
         std::vector<EncoderChoice> choices;
         if (hevc) {
-            // Only x265's CRF mode gives the quality this preset promises, so
-            // there is deliberately no fallback to another encoder.
+            // VA-API is the only hardware encoder whose constant-QP mode has
+            // been measured to match x265 at CRF 14; anything else uses x265.
+#ifndef Q_OS_MACOS
+            if (hardware)
+                choices.push_back({"hevc_vaapi", EncoderChoice::Vaapi});
+#endif
             choices.push_back({"libx265", EncoderChoice::Software});
         } else {
             if (hardware) {
@@ -641,14 +707,24 @@ private:
                 break;
             } catch (const ExportError &e) {
                 lastError = e.message;
-                m_enc.reset();
-                m_graph.reset();
-                m_src = m_sink = nullptr;
-                m_hwDevice.reset();
+                resetPipeline();
             }
         }
         if (!used)
             fail(tr("No usable %1 encoder was found (%2).").arg(hevc ? tr("H.265") : tr("H.264"), lastError));
+
+        // VA-API drivers (Mesa's, at least) write parameter sets of their own
+        // into the stream and code the pictures against those, while the
+        // encoder's extradata describes the ones FFmpeg asked for. MP4 and MOV
+        // headers carry only the extradata, and hvc1 drops the copies in the
+        // stream, so a player would decode with the wrong ones. Learn the
+        // real ones from a throwaway frame, then start over.
+        QByteArray parameterSets;
+        if (used->kind == EncoderChoice::Vaapi) {
+            parameterSets = encodedParameterSets();
+            resetPipeline();
+            buildPipeline(*used);
+        }
 
         const AVStream *ist = m_in->streams[m_videoIn];
         AVStream *ost = avformat_new_stream(m_out.get(), nullptr);
@@ -656,6 +732,15 @@ private:
             fail(tr("Out of memory."));
         check(avcodec_parameters_from_context(ost->codecpar, m_enc.get()),
               tr("Could not set up the video stream"));
+        if (!parameterSets.isEmpty()) {
+            av_freep(&ost->codecpar->extradata);
+            ost->codecpar->extradata = static_cast<uint8_t *>(
+                av_mallocz(size_t(parameterSets.size()) + AV_INPUT_BUFFER_PADDING_SIZE));
+            if (!ost->codecpar->extradata)
+                fail(tr("Out of memory."));
+            std::memcpy(ost->codecpar->extradata, parameterSets.constData(), size_t(parameterSets.size()));
+            ost->codecpar->extradata_size = int(parameterSets.size());
+        }
         // Apple's players only accept H.265 in MP4/MOV under the hvc1 tag.
         if (hevc && movFamily())
             ost->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1');
@@ -665,8 +750,9 @@ private:
         av_dict_copy(&ost->metadata, ist->metadata, 0);
         m_videoOut = ost->index;
 
-        m_details = hevc ? tr("re-encoded with x265 (CRF 20, slow)")
-                         : tr("re-encoded with %1").arg(QLatin1String(used->name));
+        m_details = !hevc                                   ? tr("re-encoded with %1").arg(QLatin1String(used->name))
+                    : used->kind == EncoderChoice::Software ? tr("re-encoded with x265 (CRF 14, slow, 10-bit)")
+                                                            : tr("re-encoded with hevc_vaapi (QP 16, 10-bit)");
         if (hardware && used->kind == EncoderChoice::Software)
             m_details += tr(" (no hardware encoder was usable)");
     }
