@@ -236,9 +236,9 @@ private:
         m_streams.resize(ic->nb_streams);
 
         const AVStream *vst = ic->streams[m_videoIn];
-        const AVRational rate = av_guess_frame_rate(ic, ic->streams[m_videoIn], nullptr);
-        if (rate.num > 0 && rate.den > 0)
-            m_frameDuration = std::max<int64_t>(1, av_rescale_q(1, av_inv_q(rate), vst->time_base));
+        m_frameRate = av_guess_frame_rate(ic, ic->streams[m_videoIn], nullptr);
+        if (m_frameRate.num > 0 && m_frameRate.den > 0)
+            m_frameDuration = std::max<int64_t>(1, av_rescale_q(1, av_inv_q(m_frameRate), vst->time_base));
 
         // Player positions are relative to the start of the media, which is
         // not necessarily timestamp zero.
@@ -353,7 +353,7 @@ private:
         m_dec.reset(avcodec_alloc_context3(codec));
         check(avcodec_parameters_to_context(m_dec.get(), st->codecpar), tr("Could not set up the decoder"));
         m_dec->pkt_timebase = st->time_base;
-        m_dec->framerate = av_guess_frame_rate(m_in.get(), m_in->streams[m_videoIn], nullptr);
+        m_dec->framerate = m_frameRate;
         m_dec->thread_count = 0;
         check(avcodec_open2(m_dec.get(), codec, nullptr), tr("Could not open the decoder"));
     }
@@ -484,7 +484,8 @@ private:
         params->height = m_srcHeight;
         params->time_base = st->time_base;
         params->sample_aspect_ratio = m_srcAspect;
-        params->frame_rate = m_dec->framerate;
+        // Not the decoder's: some (libdav1d) clear it when they are opened.
+        params->frame_rate = m_frameRate;
         params->color_space = m_srcColorSpace;
         params->color_range = m_srcColorRange;
         int err = av_buffersrc_parameters_set(m_src, params);
@@ -1096,6 +1097,7 @@ private:
     int64_t m_fileEndUs = kNoEnd;
     int64_t m_totalPts = 0;           // length of the output in the video time base, 0 when unknown
     int64_t m_maxEarlyUs = 0;         // copying: how far a segment starts before its requested point
+    AVRational m_frameRate{0, 1};     // of the source video, {0, 1} when unknown
     int64_t m_frameDuration = 1;      // video time base
     bool m_makeDts = false;           // copying: the source has no decode timestamps
     std::vector<int64_t> m_reorder;   // copying: display times awaiting a decode time, sorted
