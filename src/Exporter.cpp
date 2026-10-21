@@ -283,6 +283,15 @@ private:
 
     bool containerSupports(AVCodecID id) const
     {
+        // The MOV muxer shares its codec list with MP4 but refuses these
+        // when it writes the header, so the query alone would let them through.
+        if (QByteArray(m_out->oformat->name) == "mov") {
+            for (AVCodecID mp4Only : {AV_CODEC_ID_VP9, AV_CODEC_ID_AV1, AV_CODEC_ID_OPUS, AV_CODEC_ID_FLAC,
+                                      AV_CODEC_ID_TRUEHD}) {
+                if (id == mp4Only)
+                    return false;
+            }
+        }
         return avformat_query_codec(m_out->oformat, id, FF_COMPLIANCE_NORMAL) != 0;
     }
 
@@ -464,8 +473,6 @@ private:
                      + QByteArray::number(m_crop.y()) + ":exact=1,";
         }
         chain += QByteArray("format=") + av_get_pix_fmt_name(swFormat);
-        if (choice.kind == EncoderChoice::Vaapi)
-            chain += ",hwupload";
 
         m_graph.reset(avfilter_graph_alloc());
         m_src = avfilter_graph_alloc_filter(m_graph.get(), avfilter_get_by_name("buffer"), "in");
@@ -488,6 +495,23 @@ private:
                                            m_graph.get()),
               tr("Could not configure the filter output"));
 
+        // The chain ends in the sink, or for VA-API in an upload to the GPU.
+        // hwupload must have its device before it is initialised, which a
+        // filter created by parsing the chain would not.
+        AVFilterContext *last = m_sink;
+        if (choice.kind == EncoderChoice::Vaapi) {
+            AVBufferRef *device = nullptr;
+            check(av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0),
+                  tr("Could not open a VA-API device"));
+            m_hwDevice.reset(device);
+            last = avfilter_graph_alloc_filter(m_graph.get(), avfilter_get_by_name("hwupload"), "upload");
+            if (!last)
+                fail(tr("Out of memory."));
+            last->hw_device_ctx = av_buffer_ref(device);
+            check(avfilter_init_dict(last, nullptr), tr("Could not configure the upload to the GPU"));
+            check(avfilter_link(last, 0, m_sink, 0), tr("Could not configure the upload to the GPU"));
+        }
+
         AVFilterInOut *outputs = avfilter_inout_alloc();
         AVFilterInOut *inputs = avfilter_inout_alloc();
         outputs->name = av_strdup("in");
@@ -495,22 +519,13 @@ private:
         outputs->pad_idx = 0;
         outputs->next = nullptr;
         inputs->name = av_strdup("out");
-        inputs->filter_ctx = m_sink;
+        inputs->filter_ctx = last;
         inputs->pad_idx = 0;
         inputs->next = nullptr;
         err = avfilter_graph_parse_ptr(m_graph.get(), chain.constData(), &inputs, &outputs, nullptr);
         avfilter_inout_free(&inputs);
         avfilter_inout_free(&outputs);
         check(err, tr("Could not build the crop filter"));
-
-        if (choice.kind == EncoderChoice::Vaapi) {
-            AVBufferRef *device = nullptr;
-            check(av_hwdevice_ctx_create(&device, AV_HWDEVICE_TYPE_VAAPI, nullptr, nullptr, 0),
-                  tr("Could not open a VA-API device"));
-            m_hwDevice.reset(device);
-            for (unsigned i = 0; i < m_graph->nb_filters; ++i)
-                m_graph->filters[i]->hw_device_ctx = av_buffer_ref(device);
-        }
         check(avfilter_graph_config(m_graph.get(), nullptr), tr("Could not configure the crop filter"));
     }
 

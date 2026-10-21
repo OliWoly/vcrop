@@ -755,8 +755,11 @@ void MainWindow::startExport()
     }
     QString extension = in.suffix().toLower();
     // Containers that take H.264 or H.265 plus the usual audio codecs;
-    // anything else goes to Matroska, which accepts every codec.
-    if (!QStringList{"mp4", "m4v", "mov", "mkv"}.contains(extension))
+    // anything else goes to Matroska, which accepts every codec. FFmpeg
+    // writes .m4v as an iPod file, which can't hold H.265, so it becomes .mp4.
+    if (extension == QLatin1String("m4v"))
+        extension = QStringLiteral("mp4");
+    else if (!QStringList{"mp4", "mov", "mkv"}.contains(extension))
         extension = QStringLiteral("mkv");
     const QString suffix = cropped && trimmed ? QStringLiteral("_edited")
                            : cropped          ? QStringLiteral("_cropped")
