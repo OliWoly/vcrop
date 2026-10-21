@@ -65,3 +65,10 @@ else()
     install(FILES data/vcrop.svg
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 endif()
+
+# `cmake --build build --target uninstall` removes every installed copy and the
+# per-user state; see packaging/uninstall.sh.
+add_custom_target(uninstall
+    COMMAND "${CMAKE_CURRENT_SOURCE_DIR}/packaging/uninstall.sh" --prefix "${CMAKE_INSTALL_PREFIX}"
+    USES_TERMINAL
+    VERBATIM)

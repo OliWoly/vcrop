@@ -51,6 +51,28 @@ cmake --install build --prefix ~/Applications
 
 Requires Qt 6.5+ and FFmpeg 7.1+.
 
+### Uninstall
+
+```sh
+packaging/uninstall.sh          # or: cmake --build build --target uninstall
+```
+
+It looks in every standard install location (`~/.local`, `/usr/local`, `/usr`;
+`~/Applications`, `/Applications` and anywhere Spotlight finds `VCrop.app`), lists
+what it found and asks before removing it. Along with the installed files it
+removes:
+
+- the file dialog's remembered folder (`~/.config/vcroprc`, or
+  `~/Library/Preferences/local.vcrop.plist`),
+- preview copies left in the temp directory if VCrop crashed,
+- the "Open With" registration on macOS. On Linux it refreshes the desktop, icon
+  and Dolphin menu caches.
+
+`-n` only lists, `-y` skips the question, and `--prefix DIR` adds a non-standard
+install location. Run it as yourself first; if a system-wide install is left over,
+it prints the `sudo` command that removes it. Files that belong to a distribution
+package are left alone, and so is the build tree.
+
 ## Using it
 
 | Action | How |
