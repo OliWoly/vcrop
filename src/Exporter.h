@@ -10,7 +10,7 @@
 
 // How the video is encoded when an export has to re-encode it.
 enum class ExportPreset {
-    HevcQuality, // H.265 via x265 at CRF 20, keeping the source bit depth
+    HevcQuality, // 10-bit H.265: x265 at CRF 14, or VA-API at QP 16
     Compatible,  // 8-bit H.264, which plays everywhere
 };
 
@@ -29,7 +29,7 @@ struct ExportJob {
     QSize displaySize;     // the frame size the crop rectangle refers to
     bool reencode = false; // without a crop the streams are copied; this re-encodes instead
     ExportPreset preset = ExportPreset::HevcQuality;
-    bool hardware = false; // Compatible only: prefer a hardware H.264 encoder over libx264
+    bool hardware = false; // prefer a hardware encoder, falling back to software
     bool preview = false;  // a throwaway copy for the player: audio the container can't hold is dropped
 };
 

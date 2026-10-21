@@ -250,17 +250,20 @@ void MainWindow::buildUi()
     });
 
     m_presetCombo = new QComboBox;
-    m_presetCombo->addItem(tr("H.265 perceptually lossless (RF 20)"), int(ExportPreset::HevcQuality));
+    m_presetCombo->addItem(tr("H.265 perceptually lossless (10-bit)"), int(ExportPreset::HevcQuality));
     m_presetCombo->addItem(tr("Maximum compatibility (H.264)"), int(ExportPreset::Compatible));
-    m_presetCombo->setItemData(0, tr("x265, constant quality 20, slow preset, 10-bit kept for 10-bit sources.\n"
-                                     "Small files that look like the source; slow to encode."), Qt::ToolTipRole);
+    m_presetCombo->setItemData(0, tr("10-bit H.265 that looks like the source. x265, CRF 14, slow preset;\n"
+                                     "with Hardware encoder, VA-API at QP 16: many times faster, larger files.\n"
+                                     "Streams in browsers that play H.265 (Safari, Chrome and Edge)."),
+                               Qt::ToolTipRole);
     m_presetCombo->setItemData(1, tr("8-bit H.264 (x264, CRF 18, veryfast). Plays on anything; fast to encode."),
                                Qt::ToolTipRole);
     connect(m_presetCombo, &QComboBox::currentIndexChanged, this, &MainWindow::updateControls);
 
     m_hardwareCheck = new QCheckBox(tr("Hardware encoder"));
-    m_hardwareCheck->setToolTip(tr("Maximum compatibility only: encode H.264 on the GPU where FFmpeg supports it\n"
-                                   "(VideoToolbox, NVENC or VA-API). Faster, at somewhat lower quality per megabyte."));
+    m_hardwareCheck->setToolTip(tr("Encode on the GPU where FFmpeg supports it, falling back to the CPU.\n"
+                                   "H.265: VA-API, at about the same quality as x265 in larger files.\n"
+                                   "H.264: VideoToolbox, NVENC or VA-API, at somewhat lower quality per megabyte."));
 
     m_exportButton = new QPushButton(tr("Export…"));
     m_exportButton->setToolTip(tr("Save the cropped and trimmed video (%1)")
@@ -349,8 +352,13 @@ void MainWindow::updateControls()
     m_reencodeCheck->setChecked(reencode);
     m_reencodeCheck->setEnabled(!cropped);
     m_presetCombo->setEnabled(reencode);
+#ifdef Q_OS_MACOS
+    // There is no hardware H.265 path on macOS yet.
     m_hardwareCheck->setEnabled(reencode
                                 && m_presetCombo->currentData().toInt() == int(ExportPreset::Compatible));
+#else
+    m_hardwareCheck->setEnabled(reencode);
+#endif
     m_exportButton->setEnabled(ready && !exporting);
 }
 
@@ -755,8 +763,11 @@ void MainWindow::startExport()
     }
     QString extension = in.suffix().toLower();
     // Containers that take H.264 or H.265 plus the usual audio codecs;
-    // anything else goes to Matroska, which accepts every codec.
-    if (!QStringList{"mp4", "m4v", "mov", "mkv"}.contains(extension))
+    // anything else goes to Matroska, which accepts every codec. FFmpeg
+    // writes .m4v as an iPod file, which can't hold H.265, so it becomes .mp4.
+    if (extension == QLatin1String("m4v"))
+        extension = QStringLiteral("mp4");
+    else if (!QStringList{"mp4", "mov", "mkv"}.contains(extension))
         extension = QStringLiteral("mkv");
     const QString suffix = cropped && trimmed ? QStringLiteral("_edited")
                            : cropped          ? QStringLiteral("_cropped")
