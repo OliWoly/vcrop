@@ -251,7 +251,7 @@ private:
         int64_t previousEndUs = m_originUs;
         for (const KeepRange &range : keep) {
             Segment seg;
-            seg.wantStartUs = std::max(previousEndUs, m_originUs + std::max<qint64>(0, range.startMs) * 1000);
+            seg.wantStartUs = std::max<int64_t>(previousEndUs, m_originUs + std::max<qint64>(0, range.startMs) * 1000);
             if (range.endMs >= 0 && m_originUs + range.endMs * 1000 < m_fileEndUs)
                 seg.wantEndUs = m_originUs + range.endMs * 1000;
             seg.cutBefore = range.cutBefore;
